@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -18,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 public class TransmittableThreadLocalTest {
     @Test
     @DisplayName("Test basic TransmittableThreadLocal behavior - get value in the child thread")
-    public void inheritableThreadLocalBasic() throws InterruptedException {
+    public void transmittableThreadLocalBasic() throws InterruptedException {
         ThreadLocal<String> threadLocal = new TransmittableThreadLocal<>();
 
         String mainThreadData = "main thread";
@@ -72,7 +69,7 @@ public class TransmittableThreadLocalTest {
 
     @Test
     @DisplayName("Thread created in Thread Pool inherit value")
-    public void InheritableThreadLocalWithThreadPool() throws InterruptedException {
+    public void transmittableThreadLocalWithThreadPool() throws InterruptedException {
         ThreadLocal<String> threadLocal = new TransmittableThreadLocal<>();
 
         String mainThreadData = "main thread";
@@ -90,25 +87,23 @@ public class TransmittableThreadLocalTest {
 
     @Test
     @DisplayName("Second runnable submitted to Thread Pool gets updated value")
-    public void InheritableThreadLocalWithThreadPoolSecondRunnable() throws InterruptedException {
+    public void transmittableThreadLocalWithThreadPoolSecondRunnable() throws InterruptedException, ExecutionException {
         ThreadLocal<String> threadLocal = new TransmittableThreadLocal<>();
 
-        String mainThreadData = "main thread";
-        threadLocal.set(mainThreadData);
+        String mainOriginalThreadData = "main thread";
+        threadLocal.set(mainOriginalThreadData);
 
         ThreadLocalData dataFromChildThread = new ThreadLocalData("original data");
 
         ExecutorService executorService = TtlExecutors.getTtlExecutorService(Executors.newSingleThreadExecutor());
-        CountDownLatch firstRunnableFinished = new CountDownLatch(1);
 
-        executorService.submit(() -> {
+        Future<?> future = executorService.submit(() -> {
             dataFromChildThread.setData(threadLocal.get());
-            firstRunnableFinished.countDown();
         });
 
-        firstRunnableFinished.await();
+        future.get();
 
-        assertEquals(mainThreadData, dataFromChildThread.getData());
+        assertEquals(mainOriginalThreadData, dataFromChildThread.getData());
 
         String mainNewThreadData = "main new thread";
         threadLocal.set(mainNewThreadData);

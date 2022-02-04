@@ -22,6 +22,7 @@ class TransmittableThreadLocalInheritTest extends BaseMvcTest {
             ControllerResult response = callApi("/one-level-child-thread");
             assertEquals(i, response.getChildThreadValue());
             assertEquals(i, response.getParentThreadValue());
+            assertTrue(response.isChildThreadHasSameRequestAttributes());
             assertTrue(response.isSuccess());
         }
     }

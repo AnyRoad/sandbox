@@ -4,10 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -88,25 +86,23 @@ public class InheritedThreadLocalTest {
 
     @Test
     @DisplayName("Second runnable submitted to Thread Pool does not get updated value")
-    public void InheritableThreadLocalWithThreadPoolSecondRunnable() throws InterruptedException {
+    public void InheritableThreadLocalWithThreadPoolSecondRunnable() throws InterruptedException, ExecutionException {
         ThreadLocal<String> threadLocal = new InheritableThreadLocal<>();
 
-        String mainThreadData = "main thread";
-        threadLocal.set(mainThreadData);
+        String mainThreadOriginalData = "main thread";
+        threadLocal.set(mainThreadOriginalData);
 
-        ThreadLocalData dataFromChildThread = new ThreadLocalData("original data");
+        ThreadLocalData dataFromChildThread = new ThreadLocalData("data");
 
         ExecutorService executorService = Executors.newSingleThreadExecutor();
-        CountDownLatch firstRunnableFinished = new CountDownLatch(1);
 
-        executorService.submit(() -> {
+        Future<?> firstTask = executorService.submit(() -> {
             dataFromChildThread.setData(threadLocal.get());
-            firstRunnableFinished.countDown();
         });
 
-        firstRunnableFinished.await();
+        firstTask.get();
 
-        assertEquals(mainThreadData, dataFromChildThread.getData());
+        assertEquals(mainThreadOriginalData, dataFromChildThread.getData());
 
         threadLocal.set("main new thread");
 
@@ -115,6 +111,42 @@ public class InheritedThreadLocalTest {
         executorService.shutdown();
         executorService.awaitTermination(1, TimeUnit.SECONDS);
 
-        assertEquals(mainThreadData, dataFromChildThread.getData());
+        assertEquals(mainThreadOriginalData, dataFromChildThread.getData());
+    }
+
+    @Test
+    @DisplayName("Second runnable submitted to Thread Pool can see updates in the value itself")
+    public void InheritableThreadLocalWithThreadPoolSecondRunnableSeeChangesInObject() throws InterruptedException {
+        ThreadLocal<ThreadLocalData> threadLocal = new InheritableThreadLocal<>();
+
+        String mainThreadData = "main thread";
+        ThreadLocalData threadLocalData = new ThreadLocalData(mainThreadData);
+        threadLocal.set(threadLocalData);
+
+        AtomicReference<String> dataFromChildThread = new AtomicReference<>();
+
+        CountDownLatch threadStartedLatch = new CountDownLatch(1);
+        CountDownLatch valueChangedLatch = new CountDownLatch(1);
+
+        Thread childThread = new Thread(() -> {
+            threadStartedLatch.countDown();
+            try {
+                valueChangedLatch.await();
+            } catch (InterruptedException e) {
+                fail("Exception during latch await: " + e);
+            }
+            dataFromChildThread.set(threadLocal.get().getData());
+        });
+
+        childThread.start();
+
+        threadStartedLatch.await();
+
+        threadLocalData.setData("main new thread");
+        valueChangedLatch.countDown();
+
+        childThread.join();
+
+        assertEquals(threadLocalData.getData(), dataFromChildThread.get());
     }
 }
